@@ -29,13 +29,11 @@ jobs:
       - name: Restore
         run: dotnet restore
 
-      # Build everything once so tests can run with --no-build
       - name: Build (Release)
         run: dotnet build --configuration Release --no-restore
 
-      # Run tests and capture the exit code for grading
       - name: Run tests
-        id: run-tests
+        id: runtests
         shell: pwsh
         run: |
           dotnet test w3.tests/w3.tests.csproj `
@@ -45,22 +43,22 @@ jobs:
           "exit_code=$LASTEXITCODE" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
       - name: Upload TRX
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: test-results
           path: '**/results.trx'
           if-no-files-found: warn
 
-      # Produce the JSON that GitHub Classroom's reporter expects.
-      # IMPORTANT: use the multiline env var syntax (<<EOF ... EOF) so formatting is valid.
+      # Build JSON and export as ENV using multiline syntax.
       - name: Prepare grading JSON
         shell: pwsh
         run: |
-          $passed = ("${{ steps.run-tests.outputs.exit_code }}" -eq "0")
+          $passed = ("${{ steps.runtests.outputs.exit_code }}" -eq "0")
           if ($passed) { $status = "passed"; $score = 100 } else { $status = "failed"; $score = 0 }
           $json = @{ version=1; status="ok"; tests=@(@{ name="Unit Tests"; status=$status; score=$score; max_score=100; execution_time="0s"; message="" }) } | ConvertTo-Json -Compress
           @"
-          UNIT-TESTS_RESULTS<<EOF
+          UNIT_TESTS_RESULTS<<EOF
           $json
           EOF
           "@ | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
@@ -68,6 +66,10 @@ jobs:
       - name: Autograding Reporter
         uses: classroom-resources/autograding-grading-reporter@v1
         with:
-          runners: unit-tests
+          runners: "unit_tests"   # <-- string, underscore id
         env:
-          UNIT-TESTS_RESULTS: ${{ env.UNIT-TESTS_RESULTS }}
+          UNIT_TESTS_RESULTS: ${{ env.UNIT_TESTS_RESULTS }}
+
+      - name: Fail job if tests failed
+        if: ${{ steps.runtests.outputs.exit_code != '0' }}
+        run: exit 1
