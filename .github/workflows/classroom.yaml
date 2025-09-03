@@ -24,6 +24,9 @@ jobs:
       - name: Test (produce TRX)
         run: dotnet test --configuration Release --no-build --logger "trx;LogFileName=results.trx"
 
+      - name: Install xmllint
+        run: sudo apt-get update && sudo apt-get install -y libxml2-utils
+
       - name: Compute grade JSON for Classroom
         shell: bash
         run: |
@@ -46,8 +49,9 @@ jobs:
           path: "**/results.trx"
 
       - name: Report grades to GitHub Classroom
-        if: always()
+        if: ${{ always() && env.UNIT_RESULTS != '' }}
         uses: classroom-resources/autograding-grading-reporter@v1
         with:
           runners: UNIT
           token: ${{ secrets.GITHUB_TOKEN }}
+
