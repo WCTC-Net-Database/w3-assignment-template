@@ -53,18 +53,16 @@ jobs:
             })
           } | ConvertTo-Json -Compress
 
-          $json | Out-File -Encoding utf8 test-results.json
+          Add-Content -Path $env:GITHUB_ENV -Value "unit_RESULTS=$json"
 
       - name: Upload test results
         uses: actions/upload-artifact@v4
         with:
           name: test-results
-          path: |
-            **/results.trx
-            test-results.json
+          path: "**/results.trx"
 
       - name: Report grades to GitHub Classroom
         uses: classroom-resources/autograding-grading-reporter@v1
         with:
-          results: test-results.json
+          runners: "unit"
           token: ${{ secrets.GITHUB_TOKEN }}
