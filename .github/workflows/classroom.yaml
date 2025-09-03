@@ -15,26 +15,53 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 8.0.x
 
-      - run: dotnet restore
+      - name: Restore
+        run: dotnet restore
 
-      # Use exit code only; no stdin expectations, no regex matching.
-      - name: Run unit tests (exit code grading)
-        id: unit-tests
-        uses: classroom-resources/autograding-io-grader@v1
+      # Run tests & capture exit code (don't fail the job yet)
+      - name: Run dotnet tests
+        id: runtests
+        run: |
+          set +e
+          dotnet test w3.tests/w3.tests.csproj --configuration Release --no-build --logger "trx;LogFileName=results.trx"
+          echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+
+      # (Optional) Upload TRX so students can see details
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
         with:
-          test-name: Unit Tests
-          command: dotnet test w3.tests/w3.tests.csproj --configuration Release --no-build --logger "trx;LogFileName=results.trx"
-          timeout: 600
-          max-score: 100
+          name: test-results
+          path: "**/results.trx"
 
+      # Build a JSON result for the Classroom reporter
+      - name: Build reporter JSON
+        run: |
+          if [ "${{ steps.runtests.outputs.exit_code }}" = "0" ]; then
+            STATUS="passed"; SCORE=100
+          else
+            STATUS="failed"; SCORE=0
+          fi
+          cat > result.json <<EOF
+          {"version":1,"status":"ok","tests":[
+            {"name":"Unit Tests","status":"$STATUS","score":$SCORE,"max_score":100,"execution_time":"0s","message":""}
+          ]}
+          EOF
+          echo "UNIT-TESTS_RESULTS=$(cat result.json)" >> $GITHUB_ENV
+
+      # Report to GitHub Classroom
       - name: Autograding Reporter
         uses: classroom-resources/autograding-grading-reporter@v1
         with:
           runners: unit-tests
         env:
-          UNIT-TESTS_RESULTS: "${{ steps.unit-tests.outputs.result }}"
+          UNIT-TESTS_RESULTS: ${{ env.UNIT-TESTS_RESULTS }}
+
+      # Make the workflow fail if tests failed (so PRs show red)
+      - name: Fail job if tests failed
+        if: ${{ steps.runtests.outputs.exit_code != '0' }}
+        run: exit 1
