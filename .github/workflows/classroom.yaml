@@ -50,10 +50,6 @@ jobs:
 
           Add-Content -Path $env:GITHUB_ENV -Value "unit_RESULTS=$json"
 
-      - name: Set autograder result
-        run: echo "unit_RESULTS=$json" >> $GITHUB_ENV
-        shell: bash
-
       - name: Upload test results
         uses: actions/upload-artifact@v4
         with:
@@ -65,3 +61,4 @@ jobs:
         with:
           runners: "unit"
           token: ${{ secrets.GITHUB_TOKEN }}
+
