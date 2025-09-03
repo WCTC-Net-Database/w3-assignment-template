@@ -1,0 +1,46 @@
+name: Autograding
+
+on:
+  push:
+  workflow_dispatch:
+  repository_dispatch:
+
+permissions:
+  checks: write
+  actions: read
+  contents: read
+
+jobs:
+  grade:
+    if: github.actor != 'github-classroom[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Restore
+        run: dotnet restore
+
+      # Run the test suite and let the IO grader evaluate pass/fail by regex.
+      - name: Run unit tests via IO grader
+        id: unit-tests
+        uses: classroom-resources/autograding-io-grader@v1
+        with:
+          test-name: Unit Tests
+          id: unit-tests
+          command: dotnet test --configuration Release --no-build --logger "console;verbosity=normal"
+          # dotnet summary shows "Failed: 0" on success; regex keeps this robust across frameworks
+          expected-output: "Failed:\\s*0"
+          comparison-method: regex
+          timeout: 600
+
+      - name: Autograding Reporter
+        uses: classroom-resources/autograding-grading-reporter@v1
+        with:
+          runners: unit-tests
+        env:
+          UNIT-TESTS_RESULTS: "${{ steps.unit-tests.outputs.result }}"
