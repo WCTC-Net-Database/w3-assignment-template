@@ -28,24 +28,13 @@ jobs:
         run: dotnet build --configuration Release --no-restore
         shell: pwsh
 
-      - name: Test and capture TRX
-        id: unit
+      - name: Test and prepare autograder env
         shell: pwsh
         run: |
           dotnet test w3.tests/w3.tests.csproj `
             --configuration Release `
             --no-build `
             --logger "trx;LogFileName=results.trx"
-
-      - name: Upload test results
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-results
-          path: "**/results.trx"
-
-      - name: Prepare autograder env
-        shell: pwsh
-        run: |
           if ($LASTEXITCODE -eq 0) { $status = "passed"; $score = 100 } else { $status = "failed"; $score = 0 }
 
           $json = @{ 
@@ -62,6 +51,12 @@ jobs:
           } | ConvertTo-Json -Compress
 
           "unit_RESULTS=$json" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: "**/results.trx"
 
       - name: Report grades
         uses: classroom-resources/autograding-grading-reporter@v1
