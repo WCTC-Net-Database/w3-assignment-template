@@ -53,7 +53,11 @@ jobs:
             })
           } | ConvertTo-Json -Compress
 
-          Add-Content -Path $env:GITHUB_ENV -Value "unit_RESULTS=$json"
+          "unit_RESULTS=$json" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Debug env
+        run: echo "$env:unit_RESULTS"
+        shell: pwsh
 
       - name: Upload test results
         uses: actions/upload-artifact@v4
