@@ -7,86 +7,47 @@ on:
 
 jobs:
   grade:
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     permissions:
       checks: write
       contents: read
 
     steps:
       - uses: actions/checkout@v4
-
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 8.0.x
 
-      - name: Restore
-        run: dotnet restore
-
-      - name: Build
-        run: dotnet build --configuration Release --no-restore
+      - run: dotnet restore
+      - run: dotnet build --configuration Release --no-restore
 
       - name: Test (produce TRX)
-        shell: pwsh
-        run: |
-          # Change the test project path if needed
-          dotnet test --configuration Release --no-build `
-            --logger "trx;LogFileName=results.trx"
+        run: dotnet test --configuration Release --no-build --logger "trx;LogFileName=results.trx"
 
       - name: Compute grade JSON for Classroom
-        shell: pwsh
+        shell: bash
         run: |
-          $trx = Get-ChildItem -Recurse -Filter results.trx | Select-Object -First 1
-          if (-not $trx) { Write-Error "No results.trx found"; exit 1 }
+          trx="$(find . -type f -name results.trx | head -n1)"
+          [[ -z "$trx" ]] && { echo "No results.trx found" >&2; exit 1; }
+          total=$(xmllint --xpath 'string(//Counters/@total)' "$trx")
+          passed=$(xmllint --xpath 'string(//Counters/@passed)' "$trx")
+          status="failed"; [[ "$passed" = "$total" && "$total" != "0" ]] && status="ok"
+          cat > unit.json <<EOF
+          {"version":1,"status":"$status","tests":[{"name":"Unit tests","number":1,"score":$passed,"max_score":$total,"output":"Passed $passed of $total unit tests."}]}
+          EOF
+          echo "UNIT_RESULTS<<EOF" >> "$GITHUB_ENV"
+          cat unit.json >> "$GITHUB_ENV"
+          echo "EOF" >> "$GITHUB_ENV"
+          echo "Debug UNIT_RESULTS:"; cat unit.json
 
-          [xml]$xml = Get-Content $trx.FullName
-          # TRX formats vary slightly; try common nodes:
-          $units = @()
-          if ($xml.TestRun.ResultSummary) {
-            $summary = $xml.TestRun.ResultSummary
-            $total   = [int]$summary.Counters.total
-            $passed  = [int]$summary.Counters.passed
-          } elseif ($xml.TestRun.ResultSummary.Counters) {
-            $c = $xml.TestRun.ResultSummary.Counters
-            $total  = [int]$c.total
-            $passed = [int]$c.passed
-          } else {
-            Write-Error "Could not read TRX counters"; exit 1
-          }
-
-          $output = "Passed $passed of $total unit tests."
-          $status = if ($passed -eq $total -and $total -gt 0) { "ok" } else { "failed" }
-
-          $results = @{
-            version = 1
-            status  = $status
-            tests   = @(@{
-              name       = "Unit tests"
-              number     = 1
-              score      = $passed
-              max_score  = $total
-              output     = $output
-            })
-          } | ConvertTo-Json -Depth 5
-
-          # Debug echo (safe)
-          Write-Host "UNIT_RESULTS JSON:"
-          Write-Host $results
-
-          # Export EXACTLY as UNIT_RESULTS using heredoc to avoid BOM/newline issues
-          Add-Content -Path $env:GITHUB_ENV -Value "UNIT_RESULTS<<EOF"
-          Add-Content -Path $env:GITHUB_ENV -Value $results
-          Add-Content -Path $env:GITHUB_ENV -Value "EOF"
-
-      - name: Upload test results
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: test-results
           path: "**/results.trx"
 
       - name: Report grades to GitHub Classroom
-        if: always() # report even if tests fail
+        if: always()
         uses: classroom-resources/autograding-grading-reporter@v1
         with:
-          runners: "UNIT"   # must match the env var prefix: UNIT_RESULTS
+          runners: UNIT
           token: ${{ secrets.GITHUB_TOKEN }}
