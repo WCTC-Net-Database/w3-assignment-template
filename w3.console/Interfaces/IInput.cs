@@ -1,4 +1,4 @@
-﻿namespace CharacterConsole;
+﻿namespace w3.console.Interfaces;
 
 public interface IInput
 {

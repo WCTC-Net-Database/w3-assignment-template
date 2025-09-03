@@ -1,4 +1,6 @@
-﻿namespace CharacterConsole.Tests;
+﻿using w3.console.Interfaces;
+
+namespace w3.tests;
 
 public class MockOutput : IOutput
 {

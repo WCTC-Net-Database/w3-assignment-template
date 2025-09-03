@@ -1,4 +1,6 @@
-﻿namespace CharacterConsole;
+﻿using w3.console.Interfaces;
+
+namespace w3.console;
 
 class Program
 {
