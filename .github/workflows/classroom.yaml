@@ -50,9 +50,9 @@ jobs:
 
           Add-Content -Path $env:GITHUB_ENV -Value "unit_RESULTS=$json"
 
-      - name: Debug GITHUB_ENV
-        shell: pwsh
-        run: Get-Content $env:GITHUB_ENV
+      - name: Set autograder result
+        run: echo "unit_RESULTS=$json" >> $GITHUB_ENV
+        shell: bash
 
       - name: Upload test results
         uses: actions/upload-artifact@v4
