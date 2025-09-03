@@ -50,6 +50,7 @@ jobs:
             })
           } | ConvertTo-Json -Compress
 
+          Add-Content -Path $env:GITHUB_ENV -Value ""
           Add-Content -Path $env:GITHUB_ENV -Value "unit_RESULTS=$json"
 
       - name: Upload test results
@@ -58,8 +59,13 @@ jobs:
           name: test-results
           path: "**/results.trx"
 
+      - name: Debug GITHUB_ENV
+        shell: pwsh
+        run: Get-Content $env:GITHUB_ENV
+
       - name: Report grades
         uses: classroom-resources/autograding-grading-reporter@v1
         with:
           runners: "unit"
           token: ${{ secrets.GITHUB_TOKEN }}
+
