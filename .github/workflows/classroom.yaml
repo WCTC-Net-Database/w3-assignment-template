@@ -7,9 +7,7 @@ on:
 
 jobs:
   grade:
-    name: grade
     runs-on: windows-2022
-
     permissions:
       checks: write
       contents: read
@@ -24,11 +22,12 @@ jobs:
 
       - name: Restore
         run: dotnet restore
+        shell: pwsh
 
       - name: Build
         run: dotnet build --configuration Release --no-restore
+        shell: pwsh
 
-      # ---- Run tests & create autograder JSONs in env ----
       - name: Test and capture TRX
         id: unit
         shell: pwsh
@@ -42,31 +41,39 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: test-results
-          path: **/results.trx
+          path: "**/results.trx"
 
-      - name: Prepare autograder json env
+      - name: Prepare autograder env
         shell: pwsh
         run: |
-          # If you want to fail the score when tests fail, change "0 -eq 0" to "$LASTEXITCODE -eq 0"
-          $passed = ("0" -eq "0")
-          if ($passed) { $status = "passed"; $score = 100 } else { $status = "failed"; $score = 0 }
-          $json = @{ version=1; status="ok"; tests=@(@{ name="Unit Tests"; status=$status; score=$score; max_score=100; execution_time="0s"; message="" }) } | ConvertTo-Json -Compress
+          # set score based on test exit code—0 means success
+          if ($LASTEXITCODE -eq 0) { $status = "passed"; $score = 100 } else { $status = "failed"; $score = 0 }
 
-          @"
-UNIT_RESULTS<<EOF
-$json
-EOF
-"@ | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          $json = @{ 
+            version = 1
+            status  = "ok"
+            tests   = @(@{
+              name           = "Unit Tests"
+              status         = $status
+              score          = $score
+              max_score      = 100
+              execution_time = "0s"
+              message        = ""
+            })
+          } | ConvertTo-Json -Compress
 
-          @"
-UNIT_DUP_RESULTS<<EOF
-$json
-EOF
-"@ | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          # Emit UNIT_RESULTS env var (reporter expects <NAME>_RESULTS)
+          "UNIT_RESULTS<<EOF" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          $json              | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "EOF"              | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
-      # ---- Reporter (key fix: runners as JSON array string) ----
+          # Optional second row to prove multi-runner works
+          "UNIT_DUP_RESULTS<<EOF" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          $json                   | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "EOF"                   | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
       - name: Report grades
         uses: classroom-resources/autograding-grading-reporter@v1
         with:
-          runners: '["unit","unit_dup"]'
+          runners: unit,unit_dup
           token: ${{ secrets.GITHUB_TOKEN }}
