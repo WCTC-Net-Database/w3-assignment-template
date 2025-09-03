@@ -1,5 +1,4 @@
 name: Autograding
-
 on:
   push:
   workflow_dispatch:
@@ -17,26 +16,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 8.0.x
 
-      - name: Restore
-        run: dotnet restore
+      - run: dotnet restore
 
-      # Run the test suite and let the IO grader evaluate pass/fail by regex.
-      - name: Run unit tests via IO grader
+      # Use exit code only; no stdin expectations, no regex matching.
+      - name: Run unit tests (exit code grading)
         id: unit-tests
         uses: classroom-resources/autograding-io-grader@v1
         with:
           test-name: Unit Tests
-          id: unit-tests
-          command: dotnet test --configuration Release --no-build --logger "console;verbosity=normal"
-          # dotnet summary shows "Failed: 0" on success; regex keeps this robust across frameworks
-          expected-output: "Failed:\\s*0"
-          comparison-method: regex
+          command: dotnet test w3.tests/w3.tests.csproj --configuration Release --no-build --logger "trx;LogFileName=results.trx"
           timeout: 600
+          max-score: 100
 
       - name: Autograding Reporter
         uses: classroom-resources/autograding-grading-reporter@v1
