@@ -46,7 +46,6 @@ jobs:
       - name: Prepare autograder env
         shell: pwsh
         run: |
-          # set score based on test exit code—0 means success
           if ($LASTEXITCODE -eq 0) { $status = "passed"; $score = 100 } else { $status = "failed"; $score = 0 }
 
           $json = @{ 
@@ -62,10 +61,7 @@ jobs:
             })
           } | ConvertTo-Json -Compress
 
-          # Emit unit_RESULTS env var (reporter expects <NAME>_RESULTS)
-          "unit_RESULTS<<EOF" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-          $json              | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-          "EOF"              | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "unit_RESULTS=$json" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Report grades
         uses: classroom-resources/autograding-grading-reporter@v1
