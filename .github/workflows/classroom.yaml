@@ -26,38 +26,57 @@ jobs:
       - name: Build
         run: dotnet build --configuration Release --no-restore
 
-      - name: Test and prepare autograder env
+      - name: Test (produce TRX)
         shell: pwsh
         run: |
-          dotnet test w3.tests/w3.tests.csproj `
-            --configuration Release `
-            --no-build `
+          # Change the test project path if needed
+          dotnet test --configuration Release --no-build `
             --logger "trx;LogFileName=results.trx"
 
-          if ($LASTEXITCODE -eq 0) {
-            $status = "passed"; $score = 100
+      - name: Compute grade JSON for Classroom
+        shell: pwsh
+        run: |
+          $trx = Get-ChildItem -Recurse -Filter results.trx | Select-Object -First 1
+          if (-not $trx) { Write-Error "No results.trx found"; exit 1 }
+
+          [xml]$xml = Get-Content $trx.FullName
+          # TRX formats vary slightly; try common nodes:
+          $units = @()
+          if ($xml.TestRun.ResultSummary) {
+            $summary = $xml.TestRun.ResultSummary
+            $total   = [int]$summary.Counters.total
+            $passed  = [int]$summary.Counters.passed
+          } elseif ($xml.TestRun.ResultSummary.Counters) {
+            $c = $xml.TestRun.ResultSummary.Counters
+            $total  = [int]$c.total
+            $passed = [int]$c.passed
           } else {
-            $status = "failed"; $score = 0
+            Write-Error "Could not read TRX counters"; exit 1
           }
 
-          $json = @{
+          $output = "Passed $passed of $total unit tests."
+          $status = if ($passed -eq $total -and $total -gt 0) { "ok" } else { "failed" }
+
+          $results = @{
             version = 1
-            status  = "ok"
+            status  = $status
             tests   = @(@{
-              name           = "Unit Tests"
-              status         = $status
-              score          = $score
-              max_score      = 100
-              execution_time = "0s"
-              message        = ""
+              name       = "Unit tests"
+              number     = 1
+              score      = $passed
+              max_score  = $total
+              output     = $output
             })
-          } | ConvertTo-Json -Compress
+          } | ConvertTo-Json -Depth 5
 
-          "unit_RESULTS=$json" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          # Debug echo (safe)
+          Write-Host "UNIT_RESULTS JSON:"
+          Write-Host $results
 
-      - name: Debug env
-        run: echo "$env:unit_RESULTS"
-        shell: pwsh
+          # Export EXACTLY as UNIT_RESULTS using heredoc to avoid BOM/newline issues
+          Add-Content -Path $env:GITHUB_ENV -Value "UNIT_RESULTS<<EOF"
+          Add-Content -Path $env:GITHUB_ENV -Value $results
+          Add-Content -Path $env:GITHUB_ENV -Value "EOF"
 
       - name: Upload test results
         uses: actions/upload-artifact@v4
@@ -66,7 +85,8 @@ jobs:
           path: "**/results.trx"
 
       - name: Report grades to GitHub Classroom
+        if: always() # report even if tests fail
         uses: classroom-resources/autograding-grading-reporter@v1
         with:
-          runners: "unit"
+          runners: "UNIT"   # must match the env var prefix: UNIT_RESULTS
           token: ${{ secrets.GITHUB_TOKEN }}
