@@ -50,7 +50,7 @@ jobs:
           path: '**/results.trx'
           if-no-files-found: warn
 
-      # Build JSON and export as ENV using multiline syntax.
+      # Build JSON once, export to TWO env vars (quirk workaround)
       - name: Prepare grading JSON
         shell: pwsh
         run: |
@@ -58,7 +58,10 @@ jobs:
           if ($passed) { $status = "passed"; $score = 100 } else { $status = "failed"; $score = 0 }
           $json = @{ version=1; status="ok"; tests=@(@{ name="Unit Tests"; status=$status; score=$score; max_score=100; execution_time="0s"; message="" }) } | ConvertTo-Json -Compress
           @"
-          UNIT_TESTS_RESULTS<<EOF
+          UNIT_RESULTS<<EOF
+          $json
+          EOF
+          UNIT_DUP_RESULTS<<EOF
           $json
           EOF
           "@ | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
@@ -66,9 +69,10 @@ jobs:
       - name: Autograding Reporter
         uses: classroom-resources/autograding-grading-reporter@v1
         with:
-          runners: "unit_tests"   # <-- string, underscore id
+          runners: "unit,unit_dup"   # <- two IDs to satisfy the action
         env:
-          UNIT_TESTS_RESULTS: ${{ env.UNIT_TESTS_RESULTS }}
+          UNIT_RESULTS: ${{ env.UNIT_RESULTS }}
+          UNIT_DUP_RESULTS: ${{ env.UNIT_DUP_RESULTS }}
 
       - name: Fail job if tests failed
         if: ${{ steps.runtests.outputs.exit_code != '0' }}
