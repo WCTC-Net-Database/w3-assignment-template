@@ -74,5 +74,5 @@ jobs:
       - name: Report grades
         uses: classroom-resources/autograding-grading-reporter@v1
         with:
-          runners: unit,unit_dup
+          runners: "unit,unit_dup"
           token: ${{ secrets.GITHUB_TOKEN }}
