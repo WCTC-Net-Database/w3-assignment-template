@@ -63,12 +63,11 @@ jobs:
           } | ConvertTo-Json -Compress
 
           # Emit UNIT_RESULTS env var (reporter expects <NAME>_RESULTS)
-          "UNIT_RESULTS<<EOF" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "unit_RESULTS<<EOF" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           $json              | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           "EOF"              | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-
-          # Optional second row to prove multi-runner works
-          "UNIT_DUP_RESULTS<<EOF" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          
+          "unit_dup_RESULTS<<EOF" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           $json                   | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           "EOF"                   | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
