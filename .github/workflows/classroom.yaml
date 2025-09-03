@@ -26,16 +26,21 @@ jobs:
       - name: Build
         run: dotnet build --configuration Release --no-restore
 
-      - name: Test and prepare autograder env
+      - name: Test and create results file
         shell: pwsh
         run: |
           dotnet test w3.tests/w3.tests.csproj `
             --configuration Release `
             --no-build `
             --logger "trx;LogFileName=results.trx"
-          if ($LASTEXITCODE -eq 0) { $status = "passed"; $score = 100 } else { $status = "failed"; $score = 0 }
 
-          $json = @{ 
+          if ($LASTEXITCODE -eq 0) {
+            $status = "passed"; $score = 100
+          } else {
+            $status = "failed"; $score = 0
+          }
+
+          $json = @{
             version = 1
             status  = "ok"
             tests   = @(@{
@@ -48,17 +53,18 @@ jobs:
             })
           } | ConvertTo-Json -Compress
 
-          Add-Content -Path $env:GITHUB_ENV -Value "unit_RESULTS=$json"
+          $json | Out-File -Encoding utf8 test-results.json
 
-      - name: Upload test results
+      - name: Upload test results (TRX + JSON)
         uses: actions/upload-artifact@v4
         with:
           name: test-results
-          path: "**/results.trx"
+          path: |
+            **/results.trx
+            test-results.json
 
-      - name: Report grades
+      - name: Report grades to GitHub Classroom
         uses: classroom-resources/autograding-grading-reporter@v1
         with:
-          runners: "unit"
+          results: test-results.json
           token: ${{ secrets.GITHUB_TOKEN }}
-
