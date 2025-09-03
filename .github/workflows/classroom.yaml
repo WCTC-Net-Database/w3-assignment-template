@@ -1,67 +1,73 @@
-name: Autograding
+name: Classroom Autograding (Unit Tests)
+
 on:
   push:
+    branches: [ main ]
   workflow_dispatch:
-  repository_dispatch:
 
 permissions:
+  contents: read
   checks: write
   actions: read
-  contents: read
 
 jobs:
   grade:
+    runs-on: windows-latest
     if: github.actor != 'github-classroom[bot]'
-    runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Setup .NET 8 SDK
+        uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 8.0.x
 
       - name: Restore
         run: dotnet restore
 
-      # Run tests & capture exit code (don't fail the job yet)
-      - name: Run dotnet tests
-        id: runtests
-        run: |
-          set +e
-          dotnet test w3.tests/w3.tests.csproj --configuration Release --no-build --logger "trx;LogFileName=results.trx"
-          echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+      # Build everything once so tests can run with --no-build
+      - name: Build (Release)
+        run: dotnet build --configuration Release --no-restore
 
-      # (Optional) Upload TRX so students can see details
-      - name: Upload test results
-        if: always()
+      # Run tests and capture the exit code for grading
+      - name: Run tests
+        id: run-tests
+        shell: pwsh
+        run: |
+          dotnet test w3.tests/w3.tests.csproj `
+            --configuration Release `
+            --no-build `
+            --logger "trx;LogFileName=results.trx"
+          "exit_code=$LASTEXITCODE" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Upload TRX
         uses: actions/upload-artifact@v4
         with:
           name: test-results
-          path: "**/results.trx"
+          path: '**/results.trx'
+          if-no-files-found: warn
 
-      # Build a JSON result for the Classroom reporter
-      - name: Build reporter JSON
+      # Produce the JSON that GitHub Classroom's reporter expects.
+      # IMPORTANT: use the multiline env var syntax (<<EOF ... EOF) so formatting is valid.
+      - name: Prepare grading JSON
+        shell: pwsh
         run: |
-          if [ "${{ steps.runtests.outputs.exit_code }}" = "0" ]; then
-            STATUS="passed"; SCORE=100
-          else
-            STATUS="failed"; SCORE=0
-          fi
-          cat > result.json <<EOF
-          {"version":1,"status":"ok","tests":[
-            {"name":"Unit Tests","status":"$STATUS","score":$SCORE,"max_score":100,"execution_time":"0s","message":""}
-          ]}
+          $passed = ("${{ steps.run-tests.outputs.exit_code }}" -eq "0")
+          if ($passed) { $status = "passed"; $score = 100 } else { $status = "failed"; $score = 0 }
+          $json = @{ version=1; status="ok"; tests=@(@{ name="Unit Tests"; status=$status; score=$score; max_score=100; execution_time="0s"; message="" }) } | ConvertTo-Json -Compress
+          @"
+          UNIT-TESTS_RESULTS<<EOF
+          $json
           EOF
-          echo "UNIT-TESTS_RESULTS=$(cat result.json)" >> $GITHUB_ENV
+          "@ | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
-      # Report to GitHub Classroom
       - name: Autograding Reporter
         uses: classroom-resources/autograding-grading-reporter@v1
         with:
           runners: unit-tests
         env:
           UNIT-TESTS_RESULTS: ${{ env.UNIT-TESTS_RESULTS }}
-
-      # Make the workflow fail if tests failed (so PRs show red)
-      - name: Fail job if tests failed
-        if: ${{ steps.runtests.outputs.exit_code != '0' }}
-        run: exit 1
