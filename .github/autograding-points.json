@@ -1,0 +1,6 @@
+{
+  "scale_total": 100,
+  "tests": {
+    "w3.tests.CharacterManagerTests.FindCharacter_ShouldNotify_WhenNotFound": 30
+  }
+}
