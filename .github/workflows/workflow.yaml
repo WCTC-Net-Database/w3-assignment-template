@@ -9,7 +9,7 @@ on:
 
 jobs:
   build-test:
-    runs-on: ubuntu-latest   # ⟵ avoids Windows MAX_PATH issues with long repo names
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
@@ -25,7 +25,17 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 8.0.x
-          cache: true  # cache NuGet packages
+          # ⬇️ remove built-in cache to avoid "Dependencies lock file is not found"
+          # cache: true
+
+      # Cache NuGet packages without requiring packages.lock.json
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj', '**/*.sln', 'global.json', 'nuget.config', 'Directory.Packages.props') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
 
       - name: Restore
         run: dotnet restore
