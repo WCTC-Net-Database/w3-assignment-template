@@ -13,42 +13,99 @@ jobs:
       contents: read
 
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 8.0.x
 
-      - run: dotnet restore
-      - run: dotnet build --configuration Release --no-restore
+      - name: Restore
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build --configuration Release --no-restore
 
       - name: Test (produce TRX)
         run: dotnet test --configuration Release --no-build --logger "trx;LogFileName=results.trx"
 
-      - name: Install xmllint
-        run: sudo apt-get update && sudo apt-get install -y libxml2-utils
+      - name: Ensure jq (for JSON validation)
+        run: sudo apt-get update && sudo apt-get install -y jq
 
-      - name: Compute grade JSON for Classroom
+      - name: Compute grade JSON (namespace-safe)
         shell: bash
         run: |
-          trx="$(find . -type f -name results.trx | head -n1)"
-          [[ -z "$trx" ]] && { echo "No results.trx found" >&2; exit 1; }
-          total=$(xmllint --xpath 'string(//Counters/@total)' "$trx")
-          passed=$(xmllint --xpath 'string(//Counters/@passed)' "$trx")
-          status="failed"; [[ "$passed" = "$total" && "$total" != "0" ]] && status="ok"
-          cat > unit.json <<EOF
-          {"version":1,"status":"$status","tests":[{"name":"Unit tests","number":1,"score":$passed,"max_score":$total,"output":"Passed $passed of $total unit tests."}]}
-          EOF
-          echo "UNIT_RESULTS<<EOF" >> "$GITHUB_ENV"
-          cat unit.json >> "$GITHUB_ENV"
-          echo "EOF" >> "$GITHUB_ENV"
-          echo "Debug UNIT_RESULTS:"; cat unit.json
+          set -euo pipefail
 
-      - uses: actions/upload-artifact@v4
+          # Find the test results file
+          trx="$(find . -type f -name results.trx | head -n1)"
+          [[ -z "$trx" ]] && { echo "No results.trx found"; exit 1; }
+
+          # Write a tiny Python parser; NOTE: the closing 'PY' must be at column 0
+          cat > parse_trx.py <<'PY'
+import sys, json, xml.etree.ElementTree as ET
+trx_path = sys.argv[1]
+root = ET.parse(trx_path).getroot()
+
+# Locate <Counters> regardless of namespace
+counters = None
+for elem in root.iter():
+    if elem.tag.rsplit('}', 1)[-1] == 'Counters':
+        counters = elem
+        break
+
+if counters is None:
+    print("Could not find <Counters> in TRX", file=sys.stderr)
+    sys.exit(1)
+
+def geti(name):
+    v = counters.get(name)
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return 0
+
+total  = geti('total')
+passed = geti('passed')
+status = "ok" if (total > 0 and passed == total) else "failed"
+
+out = {
+  "version": 1,
+  "status": status,
+  "tests": [{
+      "name": "Unit tests",
+      "number": 1,
+      "score": passed,
+      "max_score": total,
+      "output": f"Passed {passed} of {total} unit tests."
+  }]
+}
+print(json.dumps(out))
+PY
+
+          # Run the parser and validate JSON
+          python3 parse_trx.py "$trx" > unit.json
+          echo "Debug unit.json:"; cat unit.json
+          jq -e . unit.json >/dev/null
+
+          # Export results to env (multiline-safe block)
+          {
+            echo "UNIT_RESULTS<<EOF"
+            cat unit.json
+            echo "EOF"
+          } >> "$GITHUB_ENV"
+
+          # Clean up the temp script
+          rm -f parse_trx.py
+
+      - name: Upload test results artifact
+        uses: actions/upload-artifact@v4
         with:
           name: test-results
           path: "**/results.trx"
 
-      - name: Publish grade to Checks (standalone)
+      - name: Publish grade to Checks
         if: always()
         uses: actions/github-script@v7
         env:
@@ -66,7 +123,7 @@ jobs:
               name: 'Autograding',
               head_sha: context.sha,
               status: 'completed',
-              conclusion: points === max && max > 0 ? 'success' : 'failure',
+              conclusion: (points === max && max > 0) ? 'success' : 'failure',
               output: {
                 title: 'Autograding',
                 summary,
@@ -74,4 +131,12 @@ jobs:
               }
             });
 
-
+      # If you later want to use the Classroom reporter instead of the Checks step above,
+      # comment out "Publish grade to Checks" and uncomment the block below.
+      #
+      # - name: Report grades to GitHub Classroom
+      #   if: ${{ always() && env.UNIT_RESULTS != '' }}
+      #   uses: classroom-resources/autograding-grading-reporter@v1
+      #   with:
+      #     runners: UNIT
+      #     token: ${{ secrets.GITHUB_TOKEN }}
